@@ -11,6 +11,9 @@ Parameters:
   EC2RootVolumeSize:
     Type: Number
     Default: 8
+  EC2InstanceClass:
+    Type: String
+    Default: 'db.t2.micro'
   DBInstanceName:
     Type: String
     Default: 'MyDatabase'
@@ -40,12 +43,18 @@ Parameters:
     Default: 'MyEC2Instance'
   ImageID:
     Type: String
-    Default: 'ami-123456'  # Update this with your specific AMI
+    Default: 'ami-07e60ac1f43c330bd'
+  AMIRootDeviceName:
+    Type: String
+    Default: '/dev/sda1'
   KeyName:
     Type: String
   S3BucketName:
     Type: String
-    Default: 'my-unique-bucket-name-12345'  # Ensure global uniqueness
+    Default: 'my-unique-bucket-name-12345'
+  RedisInstanceClass:
+    Type: String
+    Default: 'cache.t2.micro'
 
 Resources:
   MyVPC:
@@ -68,13 +77,13 @@ Resources:
   GatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
-      VPCId: !Ref MyVPC
+      VpcId: !Ref MyVPC
       InternetGatewayId: !Ref MyInternetGateway
 
   PublicSubnet:
     Type: AWS::EC2::Subnet
     Properties:
-      VPCId: !Ref MyVPC
+      VpcId: !Ref MyVPC
       CidrBlock: 10.0.1.0/24
       MapPublicIpOnLaunch: true
       Tags:
@@ -84,7 +93,7 @@ Resources:
   PrivateSubnet:
     Type: AWS::EC2::Subnet
     Properties:
-      VPCId: !Ref MyVPC
+      VpcId: !Ref MyVPC
       CidrBlock: 10.0.2.0/24
       Tags:
         - Key: Name
@@ -132,13 +141,13 @@ Resources:
         - Key: Name
           Value: !Ref EC2InstanceName
       ImageId: !Ref ImageID
-      InstanceType: t2.micro
+      InstanceType: !Ref EC2InstanceClass
       SubnetId: !Ref PublicSubnet
       KeyName: !Ref KeyName
       SecurityGroupIds:
         - !Ref EC2SecurityGroup
       BlockDeviceMappings:
-        - DeviceName: /dev/sda1
+        - DeviceName: !Ref AMIRootDeviceName
           Ebs:
             VolumeSize: !Ref EC2RootVolumeSize
 
@@ -164,7 +173,7 @@ Resources:
   MyElastiCacheCluster:
     Type: AWS::ElastiCache::CacheCluster
     Properties:
-      CacheNodeType: cache.t2.micro
+      CacheNodeType: !Ref RedisInstanceClass
       Engine: redis
       NumCacheNodes: 1
       CacheSubnetGroupName: !Ref MyElastiCacheSubnetGroup
