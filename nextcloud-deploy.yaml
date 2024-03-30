@@ -34,7 +34,7 @@ Parameters:
     NoEcho: true
   MasterUsername:
     Type: String
-    Default: 'admin'
+    Default: 'ncadmin'
   VPCName:
     Type: String
     Default: 'MyVPC'
@@ -97,14 +97,26 @@ Resources:
         - Key: Name
           Value: !Ref PublicSubnetName
 
-  PrivateSubnet:
+  PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref MyVPC
       CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
       Tags:
         - Key: Name
-          Value: !Ref PrivateSubnetName
+          Value: !Join ["", [!Ref PrivateSubnetName, "1"]]
+
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join ["", [!Ref PrivateSubnetName, "2"]]
 
   NatGatewayEIP:
     Type: AWS::EC2::EIP
@@ -138,8 +150,8 @@ Resources:
     Properties:
       DBSubnetGroupDescription: "Subnet Group for RDS Instance"
       SubnetIds:
-        - !Ref PublicSubnet
-        - !Ref PrivateSubnet
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
 
   MyEC2Instance:
     Type: AWS::EC2::Instance
@@ -178,7 +190,8 @@ Resources:
     Properties:
       Description: "ElastiCache Subnet Group"
       SubnetIds:
-        - !Ref PrivateSubnet
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
 
   MyElastiCacheCluster:
     Type: AWS::ElastiCache::CacheCluster
