@@ -209,7 +209,19 @@ Resources:
           sudo service docker start
           sudo usermod -a -G docker ec2-user
           sudo docker pull nextcloud:${NextCloudVersion}
-          sudo docker run -d -p 80:80 nextcloud
+          mkdir nextcloud
+          sudo docker run -d \
+          -e POSTGRES_DB="${DBInstanceName}" \
+          -e POSTGRES_USER="${MasterUsername}" \
+          -e POSTGRES_PASSWORD="${MasterPassword}" \
+          -e POSTGRES_HOST="${MyDBInstance.Endpoint.Address}" \
+          -e OBJECTSTORE_S3_BUCKET="${MyS3Bucket}" \
+          -e OBJECTSTORE_S3_REGION="${AWS::Region}" \
+          -e OBJECTSTORE_S3_KEY="${BucketUserCredentials}" \
+          -e OBJECTSTORE_S3_SECRET="${BucketUserCredentials.SecretAccessKey}" \
+          -e REDIS_HOST="${MyElastiCacheCluster.RedisEndpoint.Address}" \
+          -e REDIS_PORT="${MyElastiCacheCluster.RedisEndpoint.Port}" \
+          -p 80:80 --mount src="/nextcloud",target="/var/www/html",type=bind nextcloud:${NextCloudVersion}
 
   MyDBInstance:
     Type: AWS::RDS::DBInstance
@@ -287,14 +299,55 @@ Resources:
         - !Ref RedisSecurityGroup
 
   MyS3Bucket:
+    DeletionPolicy: Retain
     Type: AWS::S3::Bucket
     Properties:
+      VersioningConfiguration:
+        Status: Enabled
       BucketName: !Ref S3BucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - BucketKeyEnabled: true
+          ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         IgnorePublicAcls: true
         BlockPublicPolicy: true
         RestrictPublicBuckets: true
+
+  BucketUser:
+    Type: AWS::IAM::User
+    Properties:
+      Policies:
+      - PolicyName: s3-access
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action:
+            - s3:*
+            Resource: !Sub arn:aws:s3:::${MyS3Bucket}
+          - Effect: Allow
+            Action:
+            - s3:*
+            Resource: !Sub arn:aws:s3:::${MyS3Bucket}/*
+          - Effect: Deny
+            Action:
+            - s3:DeleteBucket*
+            - s3:PutBucketPolicy
+            - s3:PutEncryptionConfiguration
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - s3:GetBucketLocation
+            Resource: arn:aws:s3:::*
+
+  BucketUserCredentials:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      Serial: 1
+      Status: Active
+      UserName: !Ref BucketUser
 
   PublicSubnetNACL:
     Type: AWS::EC2::NetworkAcl
