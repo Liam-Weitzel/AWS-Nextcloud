@@ -16,7 +16,7 @@ Parameters:
     Default: 't2.micro'
   DBInstanceName:
     Type: String
-    Default: 'MyDatabase'
+    Default: 'nextcloud'
   DBInstanceClass:
     Type: String
     Default: 'db.t4g.micro'
@@ -222,6 +222,10 @@ Resources:
           -e REDIS_HOST="${MyElastiCacheCluster.RedisEndpoint.Address}" \
           -e REDIS_PORT="${MyElastiCacheCluster.RedisEndpoint.Port}" \
           -p 80:80 --mount src="/nextcloud",target="/var/www/html",type=bind nextcloud:${NextCloudVersion}
+          sudo yum install -y cronie
+          sudo systemctl start crond
+          sudo systemctl enable crond
+          (crontab -l 2>/dev/null; echo "@reboot sudo docker run -d -p 80:80 --mount src='/nextcloud',target='/var/www/html',type=bind nextcloud:${NextCloudVersion}") | crontab -
 
   MyDBInstance:
     Type: AWS::RDS::DBInstance
