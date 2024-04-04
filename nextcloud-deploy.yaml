@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'AWS environment setup with EC2, RDS, ElastiCache, S3, and secure networking components.'
+Description: 'Nextcloud environment'
 
 Parameters:
   PublicSubnetName:
@@ -109,7 +109,6 @@ Resources:
       Tags:
         - Key: Name
           Value: !Join ["", [!Ref PrivateSubnetName, "1"]]
-
 
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
@@ -225,6 +224,21 @@ Resources:
           --mount src="/nextcloud",target="/var/www/html",type=bind \
           --restart=always \
           nextcloud:${NextCloudVersion}
+          sudo yum install cronie -y
+          sudo systemctl enable crond
+          sudo systemctl start crond
+          echo "*/5 * * * * /usr/bin/docker exec -u www-data \$\(/usr/bin/docker ps --filter \"ancestor=nextcloud\" --format \"{{.ID}}\" | head -n 1\) php /var/www/html/cron.php >/dev/null 2>&1" | crontab -
+
+  MyElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  EIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      InstanceId: !Ref MyEC2Instance
+      AllocationId: !GetAtt MyElasticIP.AllocationId
 
   MyDBInstance:
     Type: AWS::RDS::DBInstance
