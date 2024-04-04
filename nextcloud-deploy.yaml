@@ -227,7 +227,7 @@ Resources:
           sudo yum install cronie -y
           sudo systemctl enable crond
           sudo systemctl start crond
-          echo "*/5 * * * * /usr/bin/docker exec -u www-data \$\(/usr/bin/docker ps --filter \"ancestor=nextcloud\" --format \"{{.ID}}\" | head -n 1\) php /var/www/html/cron.php >/dev/null 2>&1" | crontab -
+          echo "*/5 * * * * sudo /usr/bin/docker exec -u www-data \$(sudo /usr/bin/docker ps --filter \"ancestor=nextcloud\" --format \"{{.ID}}\" | head -n 1) php /var/www/html/cron.php >/dev/null 2>&1" | crontab -
 
   MyElasticIP:
     Type: AWS::EC2::EIP
