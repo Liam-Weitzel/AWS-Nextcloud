@@ -1,73 +1,96 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Nextcloud environment'
+Description: 'Nextcloud environment (ARM-based, public subnet only)'
 
 Parameters:
   PublicSubnetName:
     Type: String
-    Default: 'MyPublicSubnet'
-  PrivateSubnetName:
-    Type: String
-    Default: 'MyPrivateSubnet'
+    Default: 'nextcloud'
   EC2RootVolumeSize:
     Type: Number
-    Default: 30
+    Default: 8
+    MinValue: 8
+    MaxValue: 100
   EC2InstanceClass:
     Type: String
-    Default: 't2.micro'
+    Default: 't4g.small'
+    AllowedValues:
+      - 't4g.micro'
+      - 't4g.small'
+      - 't4g.medium'
   DBInstanceName:
     Type: String
     Default: 'nextcloud'
+    MinLength: 1
+    MaxLength: 63
   DBInstanceClass:
     Type: String
     Default: 'db.t4g.micro'
+    AllowedValues:
+      - 'db.t4g.micro'
+      - 'db.t4g.small'
+      - 'db.t4g.medium'
   DBEngine:
     Type: String
     Default: 'postgres'
+    AllowedValues:
+      - 'postgres'
+      - 'mysql'
   DBEngineVersion:
     Type: String
     Default: '16.2'
   DBAllocatedStorage:
     Type: Number
-    Default: 20
+    Default: 5
+    MinValue: 5
+    MaxValue: 100
+  MasterUsername:
+    Type: String
+    Default: 'liamw'
+    MinLength: 1
+    MaxLength: 16
   MasterPassword:
     Type: String
     NoEcho: true
-  MasterUsername:
-    Type: String
-    Default: 'ncadmin'
+    MinLength: 8
+    MaxLength: 41
   VPCName:
     Type: String
-    Default: 'MyVPC'
+    Default: 'nextcloud'
   IGWName:
     Type: String
-    Default: 'MyInternetGateway'
-  NATGWName:
-    Type: String
-    Default: 'MyNATGateway'
+    Default: 'nextcloud'
   EC2InstanceName:
     Type: String
-    Default: 'MyEC2Instance'
+    Default: 'nextcloud'
   ImageID:
     Type: String
-    Default: 'ami-0183b16fc359a89dd'
+    Default: 'ami-0c85f77ef4c000593'
   AMIRootDeviceName:
     Type: String
     Default: '/dev/xvda'
   KeyName:
     Type: String
-    Default: 'Nextcloud'
+    Default: 'nextcloud'
   S3BucketName:
     Type: String
-    Default: 'my-unique-bucket-name-12345'
+    Default: 'nextcloud-liamw-data-storage'
   RedisInstanceClass:
     Type: String
-    Default: 'cache.t2.micro'
+    Default: 'cache.t4g.micro'
+    AllowedValues:
+      - 'cache.t4g.micro'
+      - 'cache.t4g.small'
+      - 'cache.t4g.medium'
   NextCloudVersion:
     Type: String
-    Default: 'latest'
+    Default: '27'
+    AllowedValues:
+      - '26'
+      - '27'
+      - 'latest'
 
 Resources:
-  MyVPC:
+  VPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.0.0.0/16
@@ -77,7 +100,7 @@ Resources:
         - Key: Name
           Value: !Ref VPCName
 
-  MyInternetGateway:
+  InternetGateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
@@ -87,54 +110,36 @@ Resources:
   GatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
-      VpcId: !Ref MyVPC
-      InternetGatewayId: !Ref MyInternetGateway
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
 
-  PublicSubnet:
+  PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref MyVPC
+      VpcId: !Ref VPC
       CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: !Ref PublicSubnetName
+          Value: !Sub ${PublicSubnetName}-1
 
-  PrivateSubnet1:
+  PublicSubnet2:
     Type: AWS::EC2::Subnet
     Properties:
-      VpcId: !Ref MyVPC
+      VpcId: !Ref VPC
       CidrBlock: 10.0.2.0/24
-      AvailabilityZone: !Select [0, !GetAZs '']
-      Tags:
-        - Key: Name
-          Value: !Join ["", [!Ref PrivateSubnetName, "1"]]
-
-  PrivateSubnet2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref MyVPC
-      CidrBlock: 10.0.3.0/24
       AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: !Join ["", [!Ref PrivateSubnetName, "2"]]
-
-  NatGatewayEIP:
-    Type: AWS::EC2::EIP
-    DependsOn: GatewayAttachment
-
-  MyNatGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt NatGatewayEIP.AllocationId
-      SubnetId: !Ref PublicSubnet
+          Value: !Sub ${PublicSubnetName}-2
 
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: "Allow SSH, HTTP, and HTTPS to EC2 instance"
-      VpcId: !Ref MyVPC
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 22
@@ -158,7 +163,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: "Allow PostgreSQL traffic from EC2 instance"
-      VpcId: !Ref MyVPC
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 5432
@@ -169,22 +174,14 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: "Allow Redis traffic from EC2 instance"
-      VpcId: !Ref MyVPC
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 6379
           ToPort: 6379
           SourceSecurityGroupId: !Ref EC2SecurityGroup
 
-  DBSubnetGroup:
-    Type: AWS::RDS::DBSubnetGroup
-    Properties:
-      DBSubnetGroupDescription: "Subnet Group for RDS Instance"
-      SubnetIds:
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
-
-  MyEC2Instance:
+  EC2Instance:
     Type: AWS::EC2::Instance
     Properties:
       Tags:
@@ -192,7 +189,7 @@ Resources:
           Value: !Ref EC2InstanceName
       ImageId: !Ref ImageID
       InstanceType: !Ref EC2InstanceClass
-      SubnetId: !Ref PublicSubnet
+      SubnetId: !Ref PublicSubnet1
       KeyName: !Ref KeyName
       SecurityGroupIds:
         - !Ref EC2SecurityGroup
@@ -203,33 +200,39 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          sudo yum update -y
-          sudo yum install docker -y
-          sudo service docker start
-          sudo usermod -a -G docker ec2-user
-          sudo docker pull nextcloud:${NextCloudVersion}
-          mkdir nextcloud
-          sudo docker run -d \
+          dnf update -y
+          dnf install docker -y
+          systemctl enable docker
+          systemctl start docker
+          usermod -a -G docker ec2-user
+          docker pull --platform linux/arm64 nextcloud:${NextCloudVersion}
+          mkdir -p /nextcloud
+          mkdir -p /apache
+          docker volume create --driver local -o o=bind -o type=none -o device="/apache" apache
+          docker run -d \
+          --platform linux/arm64 \
           -e POSTGRES_DB="${DBInstanceName}" \
           -e POSTGRES_USER="${MasterUsername}" \
           -e POSTGRES_PASSWORD="${MasterPassword}" \
-          -e POSTGRES_HOST="${MyDBInstance.Endpoint.Address}" \
-          -e OBJECTSTORE_S3_BUCKET="${MyS3Bucket}" \
+          -e POSTGRES_HOST="${DBInstance.Endpoint.Address}" \
+          -e OBJECTSTORE_S3_BUCKET="${S3Bucket}" \
           -e OBJECTSTORE_S3_REGION="${AWS::Region}" \
           -e OBJECTSTORE_S3_KEY="${BucketUserCredentials}" \
           -e OBJECTSTORE_S3_SECRET="${BucketUserCredentials.SecretAccessKey}" \
-          -e REDIS_HOST="${MyElastiCacheCluster.RedisEndpoint.Address}" \
-          -e REDIS_PORT="${MyElastiCacheCluster.RedisEndpoint.Port}" \
+          -e REDIS_HOST="${ElastiCacheCluster.RedisEndpoint.Address}" \
+          -e REDIS_PORT="${ElastiCacheCluster.RedisEndpoint.Port}" \
           -p 80:80 \
+          -p 443:443 \
           --mount src="/nextcloud",target="/var/www/html",type=bind \
+          --mount src="apache",target="/etc/apache2",type=volume \
           --restart=always \
           nextcloud:${NextCloudVersion}
-          sudo yum install cronie -y
-          sudo systemctl enable crond
-          sudo systemctl start crond
-          echo "*/5 * * * * sudo /usr/bin/docker exec -u www-data \$(sudo /usr/bin/docker ps --filter \"ancestor=nextcloud\" --format \"{{.ID}}\" | head -n 1) php /var/www/html/cron.php >/dev/null 2>&1" | crontab -
+          dnf install cronie -y
+          systemctl enable crond
+          systemctl start crond
+          echo "*/5 * * * * docker exec -u www-data \$(docker ps --format \"{{.ID}} {{.Image}}\" | grep \"nextcloud\" | awk '{print \$1}' | head -n 1) php -f /var/www/html/cron.php >/dev/null 2>&1" | crontab -
 
-  MyElasticIP:
+  ElasticIP:
     Type: AWS::EC2::EIP
     Properties:
       Domain: vpc
@@ -237,10 +240,10 @@ Resources:
   EIPAssociation:
     Type: AWS::EC2::EIPAssociation
     Properties:
-      InstanceId: !Ref MyEC2Instance
-      AllocationId: !GetAtt MyElasticIP.AllocationId
+      InstanceId: !Ref EC2Instance
+      AllocationId: !GetAtt ElasticIP.AllocationId
 
-  MyDBInstance:
+  DBInstance:
     Type: AWS::RDS::DBInstance
     Properties:
       DBName: !Ref DBInstanceName
@@ -254,68 +257,59 @@ Resources:
       DBSubnetGroupName: !Ref DBSubnetGroup
       VPCSecurityGroups:
         - !Ref RDSSecurityGroup
+      PubliclyAccessible: true
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
-      VpcId: !Ref MyVPC
+      VpcId: !Ref VPC
 
   PublicRoute:
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !Ref MyInternetGateway
+      GatewayId: !Ref InternetGateway
 
-  PublicSubnetRouteTableAssociation:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: "Subnet Group for RDS Instance"
+      SubnetIds:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+
+  PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref PublicSubnet
+      SubnetId: !Ref PublicSubnet1
       RouteTableId: !Ref PublicRouteTable
 
-  PrivateRouteTable:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref MyVPC
-
-  PrivateRoute:
-    Type: AWS::EC2::Route
-    Properties:
-      RouteTableId: !Ref PrivateRouteTable
-      DestinationCidrBlock: 0.0.0.0/0
-      NatGatewayId: !Ref MyNatGateway
-
-  PrivateSubnet1RouteTableAssociation:
+  PublicSubnet2RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
-      SubnetId: !Ref PrivateSubnet1
-      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
 
-  PrivateSubnet2RouteTableAssociation:
-    Type: AWS::EC2::SubnetRouteTableAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet2
-      RouteTableId: !Ref PrivateRouteTable
-
-  MyElastiCacheSubnetGroup:
+  ElastiCacheSubnetGroup:
     Type: AWS::ElastiCache::SubnetGroup
     Properties:
       Description: "ElastiCache Subnet Group"
       SubnetIds:
-        - !Ref PrivateSubnet1
-        - !Ref PrivateSubnet2
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
 
-  MyElastiCacheCluster:
+  ElastiCacheCluster:
     Type: AWS::ElastiCache::CacheCluster
     Properties:
       CacheNodeType: !Ref RedisInstanceClass
       Engine: redis
       NumCacheNodes: 1
-      CacheSubnetGroupName: !Ref MyElastiCacheSubnetGroup
+      CacheSubnetGroupName: !Ref ElastiCacheSubnetGroup
       VpcSecurityGroupIds:
         - !Ref RedisSecurityGroup
 
-  MyS3Bucket:
+  S3Bucket:
     DeletionPolicy: Retain
     Type: AWS::S3::Bucket
     Properties:
@@ -343,11 +337,11 @@ Resources:
           - Effect: Allow
             Action:
             - s3:*
-            Resource: !Sub arn:aws:s3:::${MyS3Bucket}
+            Resource: !Sub arn:aws:s3:::${S3Bucket}
           - Effect: Allow
             Action:
             - s3:*
-            Resource: !Sub arn:aws:s3:::${MyS3Bucket}/*
+            Resource: !Sub arn:aws:s3:::${S3Bucket}/*
           - Effect: Deny
             Action:
             - s3:DeleteBucket*
@@ -369,7 +363,7 @@ Resources:
   PublicSubnetNACL:
     Type: AWS::EC2::NetworkAcl
     Properties:
-      VpcId: !Ref MyVPC
+      VpcId: !Ref VPC
 
   InboundPublicNACLRule: 
     Type: AWS::EC2::NetworkAclEntry
@@ -397,78 +391,28 @@ Resources:
         From: 0
         To: 65535
 
-  PublicSubnetNACLAssociation:
+  PublicSubnet1NACLAssociation:
     Type: AWS::EC2::SubnetNetworkAclAssociation
     Properties:
-      SubnetId: !Ref PublicSubnet
+      SubnetId: !Ref PublicSubnet1
       NetworkAclId: !Ref PublicSubnetNACL
 
-  PrivateSubnetNACL:
-    Type: AWS::EC2::NetworkAcl
-    Properties:
-      VpcId: !Ref MyVPC
-
-  InboundRDSTrafficRule:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties:
-      NetworkAclId: !Ref PrivateSubnetNACL
-      RuleNumber: 100
-      Protocol: 6
-      RuleAction: allow
-      Egress: false
-      CidrBlock: 10.0.1.0/24
-      PortRange:
-        From: 5432
-        To: 5432
-
-  InboundRedisTrafficRule:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties:
-      NetworkAclId: !Ref PrivateSubnetNACL
-      RuleNumber: 110
-      Protocol: 6
-      RuleAction: allow
-      Egress: false
-      CidrBlock: 10.0.1.0/24
-      PortRange:
-        From: 6379
-        To: 6379
-
-  OutboundPrivateSubnetRule:
-    Type: AWS::EC2::NetworkAclEntry
-    Properties:
-      NetworkAclId: !Ref PrivateSubnetNACL
-      RuleNumber: 200
-      Protocol: -1
-      RuleAction: allow
-      Egress: true
-      CidrBlock: 0.0.0.0/0
-      PortRange:
-        From: 0
-        To: 65535
-
-  PrivateSubnet1NACLAssociation:
+  PublicSubnet2NACLAssociation:
     Type: AWS::EC2::SubnetNetworkAclAssociation
     Properties:
-      SubnetId: !Ref PrivateSubnet1
-      NetworkAclId: !Ref PrivateSubnetNACL
-
-  PrivateSubnet2NACLAssociation:
-    Type: AWS::EC2::SubnetNetworkAclAssociation
-    Properties:
-      SubnetId: !Ref PrivateSubnet2
-      NetworkAclId: !Ref PrivateSubnetNACL
+      SubnetId: !Ref PublicSubnet2
+      NetworkAclId: !Ref PublicSubnetNACL
 
 Outputs:
   EC2InstancePublicIP:
     Description: "Public IP of the EC2 Instance"
-    Value: !GetAtt MyEC2Instance.PublicIp
+    Value: !GetAtt EC2Instance.PublicIp
   S3BucketName:
     Description: "S3 Bucket Name"
-    Value: !Ref MyS3Bucket
+    Value: !Ref S3Bucket
   DBInstanceEndpoint:
     Description: "Database Endpoint"
-    Value: !GetAtt MyDBInstance.Endpoint.Address
+    Value: !GetAtt DBInstance.Endpoint.Address
   RedisEndpoint:
     Description: "ElastiCache Redis Endpoint"
-    Value: !GetAtt MyElastiCacheCluster.RedisEndpoint.Address
+    Value: !GetAtt ElastiCacheCluster.RedisEndpoint.Address
